@@ -9,9 +9,11 @@ Key UI improvements:
   - Market regime colour coding
 """
 
-import sys
+import sys, platform
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
+
+IS_CLOUD = platform.system() != "Windows"  # Streamlit Cloud runs on Linux
 
 from datetime import datetime
 import streamlit as st
@@ -154,22 +156,30 @@ if "compact_mode" not in st.session_state:
 with st.sidebar:
 
     # ── Top controls ─────────────────────────────────────────
-    c_ref, c_ml = st.columns(2)
-    with c_ref:
+    if IS_CLOUD:
         if st.button("🔄 Refresh", use_container_width=True, type="primary"):
             for k in ["batch_dl_done", "delta_done", "weekly_done",
                       "monthly_done", "weekly_df", "monthly_df"]:
                 st.session_state.pop(k, None)
             st.cache_data.clear()
             st.rerun()
-    with c_ml:
-        run_ml = st.toggle("🤖 ML", value=False,
-                           help="XGBoost+RF ensemble. ~2-4 sec/stock.")
-
-    if run_ml:
-        st.success("ML ON")
+        run_ml = False
     else:
-        st.caption("ML OFF — fast mode")
+        c_ref, c_ml = st.columns(2)
+        with c_ref:
+            if st.button("🔄 Refresh", use_container_width=True, type="primary"):
+                for k in ["batch_dl_done", "delta_done", "weekly_done",
+                          "monthly_done", "weekly_df", "monthly_df"]:
+                    st.session_state.pop(k, None)
+                st.cache_data.clear()
+                st.rerun()
+        with c_ml:
+            run_ml = st.toggle("🤖 ML", value=False,
+                               help="XGBoost+RF ensemble. ~2-4 sec/stock.")
+        if run_ml:
+            st.success("ML ON")
+        else:
+            st.caption("ML OFF — fast mode")
 
     # ── Universe ──────────────────────────────────────────────
     st.divider()
@@ -186,13 +196,14 @@ with st.sidebar:
     sc = cache_stats(conn_s)
     conn_s.close()
     st.caption(f"💾 {sc['size_mb']} MB · {sc['tickers']} tkrs · {sc['rows']:,} rows")
-    if st.button("🗑️ Clear ML Cache", use_container_width=True):
-        import shutil
-        ml_cache = Path(__file__).parent / "data" / "ml_cache"
-        if ml_cache.exists():
-            shutil.rmtree(ml_cache)
-        st.cache_data.clear()
-        st.rerun()
+    if not IS_CLOUD:
+        if st.button("🗑️ Clear ML Cache", use_container_width=True):
+            import shutil
+            ml_cache = Path(__file__).parent / "data" / "ml_cache"
+            if ml_cache.exists():
+                shutil.rmtree(ml_cache)
+            st.cache_data.clear()
+            st.rerun()
 
     # ── Quick-Scan Presets ────────────────────────────────────
     st.divider()
@@ -259,10 +270,13 @@ with st.sidebar:
         f_engulf_br = st.checkbox("Bearish Engulfing")
         f_hammer    = st.checkbox("Hammer")
 
-    with st.expander("🤖 ML"):
-        f_ml_buy   = st.checkbox("ML Buy")
-        f_ml_sell  = st.checkbox("ML Sell")
-        f_conflict = st.checkbox("Conflicts Only")
+    if IS_CLOUD:
+        f_ml_buy = f_ml_sell = f_conflict = False
+    else:
+        with st.expander("🤖 ML"):
+            f_ml_buy   = st.checkbox("ML Buy")
+            f_ml_sell  = st.checkbox("ML Sell")
+            f_conflict = st.checkbox("Conflicts Only")
 
     # Count active manual filters
     _manual_filters = [f_bullish_d, f_bearish_d, f_trending, f_ranging,
@@ -304,7 +318,7 @@ with st.sidebar:
     if not compact_mode:
         cc1, cc2 = st.columns(2)
         show_patterns = cc1.checkbox("Patterns",  value=True)
-        show_ml       = cc2.checkbox("ML Cols",   value=True)
+        show_ml       = False if IS_CLOUD else cc2.checkbox("ML Cols", value=True)
         show_context  = cc1.checkbox("52wH/EMA",  value=True)
         show_rs       = cc2.checkbox("RS Nifty",  value=True)
         show_smi      = cc1.checkbox("SMI",       value=True)
