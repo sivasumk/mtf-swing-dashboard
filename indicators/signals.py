@@ -19,6 +19,7 @@ from config import (
     ATR_EXPANSION_MULT,
     MOM_RSI_WEIGHT, MOM_MACD_WEIGHT, MOM_KUMO_WEIGHT,
     ML_STRONG_BUY_PROB, ML_STRONG_SELL_PROB,
+    ML_BEAR_BUY_PROB, ML_BEAR_SELL_PROB,
     MOM_EMA_WEIGHT, MOM_RSI_SMA_WEIGHT,
     TREND_ICONS, REGIME_ICONS, SQUEEZE_ICONS, RSI_ZONE_ICONS,
 )
@@ -451,15 +452,20 @@ def format_row(ticker: str, signals: dict,
     vol_icon   = SQUEEZE_ICONS.get(t["VolStatus"], "")
     rsi_icon   = RSI_ZONE_ICONS.get(t["RSI_Zone"], "➖")
 
-    # ML signal — "ML off" reason means ML was not run
+    # ML signal — regime-adaptive thresholds
+    # Stocks below EMA200 need higher conviction to trigger Buy
     if ml_reason in ("ML off", "ML error", "Insufficient data"):
         ml_signal = "—"
-    elif ml_prob > ML_STRONG_BUY_PROB:
-        ml_signal = "🟢 Buy"
-    elif ml_prob < ML_STRONG_SELL_PROB:
-        ml_signal = "🔴 Sell"
     else:
-        ml_signal = "🟡 Hold"
+        above_200 = int(t.get("Above_EMA200", 0) or 0) == 1
+        buy_th  = ML_STRONG_BUY_PROB  if above_200 else ML_BEAR_BUY_PROB
+        sell_th = ML_STRONG_SELL_PROB  if above_200 else ML_BEAR_SELL_PROB
+        if ml_prob > buy_th:
+            ml_signal = "🟢 Buy"
+        elif ml_prob < sell_th:
+            ml_signal = "🔴 Sell"
+        else:
+            ml_signal = "🟡 Hold"
 
     # Trend-ML alignment check
     trend_ml_ok = (

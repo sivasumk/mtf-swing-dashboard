@@ -114,18 +114,18 @@ def _clean_yf(raw: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame()
     df = raw[needed].copy().dropna()
     for c in ["Open", "High", "Low", "Close"]:
-        df[c] = df[c].astype("float32")
-    df["Volume"] = df["Volume"].astype("int64")
+        df.loc[:, c] = df[c].astype("float32")
+    df.loc[:, "Volume"] = df["Volume"].astype("int64")
     return df
 
 
 def fetch_single(ticker: str, start: str, end: str | None = None) -> pd.DataFrame:
-    """Download one ticker from yfinance."""
+    """Download one ticker from yfinance (thread-safe via Ticker.history)."""
     try:
-        kw = dict(start=start, auto_adjust=True, progress=False)
+        kw = dict(start=start, auto_adjust=True)
         if end:
             kw["end"] = end
-        raw = yf.download(ticker, **kw)
+        raw = yf.Ticker(ticker).history(**kw)
         return _clean_yf(raw)
     except Exception as e:
         log.warning(f"fetch_single({ticker}): {e}")
@@ -257,8 +257,8 @@ def delta_update_parallel(
             continue
         try:
             ld = datetime.strptime(last_dates[t], "%Y-%m-%d").date()
-            # Stale if last bar is older than yesterday (accounts for weekends)
-            if ld < today - timedelta(days=1):
+            # Stale if last bar is older than today
+            if ld < today:
                 stale.append((t, str(ld + timedelta(days=1))))
         except Exception:
             continue

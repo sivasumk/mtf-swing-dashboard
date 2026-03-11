@@ -370,7 +370,7 @@ try:
          set(feats["target"].unique()).issubset({0,1}))
     test("No inf values in features",
          not feats[FEATURE_COLS].replace([float("inf"),float("-inf")],float("nan")).isnull().all().any())
-    test("Feature count = 25", len(FEATURE_COLS) == 25, f"got {len(FEATURE_COLS)}")
+    test("Feature count = 31", len(FEATURE_COLS) == 31, f"got {len(FEATURE_COLS)}")
 
     # Target logic: price higher after 5 days
     from config import ML_FORWARD_DAYS

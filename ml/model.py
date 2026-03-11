@@ -1,14 +1,16 @@
 """
-ml/model.py — XGBoost + Ensemble ML Model
+ml/model.py — 5-Model Ensemble ML Pipeline
 
 Design:
-  1. XGBoost (GPU if available) — primary model
-  2. Random Forest               — diversity / stability
-  3. Logistic Regression         — linear baseline
-  Ensemble: weighted average probabilities (0.5 / 0.3 / 0.2)
+  1. XGBoost (GPU if available)  — gradient boosting primary
+  2. LightGBM                    — fast gradient boosting
+  3. CatBoost                    — robust gradient boosting
+  4. Random Forest               — diversity / stability
+  5. Logistic Regression         — linear baseline
+  Ensemble: weighted average probabilities (0.25/0.25/0.20/0.15/0.15)
 
   Time-decay sample weighting: recent bars get higher weight
-  Walk-forward validation:      3 expanding folds for accuracy estimate
+  Purged walk-forward validation: 5 expanding folds, no target leakage
 
 Returns:
   probability (float)    — ensemble bullish probability 0-1
@@ -29,13 +31,13 @@ from datetime import datetime, timedelta
 from config import (
     ML_FORWARD_DAYS, ML_MIN_SAMPLES, ML_TIME_DECAY,
     ML_TRAIN_YEARS,
-    WF_N_SPLITS, WF_TEST_SIZE,
+    WF_N_SPLITS, WF_TEST_SIZE, WF_PURGE_GAP,
 )
 from ml.features import build_features, FEATURE_COLS
 
 log = logging.getLogger(__name__)
 
-# XGBoost with GPU auto-detection
+# ── XGBoost with GPU auto-detection ────────────────────────
 try:
     import xgboost as xgb
     _test_model = xgb.XGBClassifier(device="cuda", n_estimators=1, verbosity=0)
@@ -53,12 +55,30 @@ except Exception:
         xgb        = None
         USE_GPU    = False
         XGB_DEVICE = "none"
-        log.warning("XGBoost not available — using RF + LR only")
+        log.warning("XGBoost not available")
 
-# Ensemble weights
-W_XGB = 0.50
-W_RF  = 0.30
-W_LR  = 0.20
+# ── LightGBM ──────────────────────────────────────────────
+try:
+    import lightgbm as lgb
+    log.info("LightGBM available")
+except ImportError:
+    lgb = None
+    log.warning("LightGBM not available")
+
+# ── CatBoost ──────────────────────────────────────────────
+try:
+    from catboost import CatBoostClassifier
+    log.info("CatBoost available")
+except ImportError:
+    CatBoostClassifier = None
+    log.warning("CatBoost not available")
+
+# Ensemble weights (5-model)
+W_XGB = 0.25
+W_LGB = 0.25
+W_CB  = 0.20
+W_RF  = 0.15
+W_LR  = 0.15
 
 
 # ══════════════════════════════════════════════════════════════
@@ -122,13 +142,18 @@ def train_and_predict(df_with_indicators: pd.DataFrame) -> tuple[float, float, s
 
 
 # ══════════════════════════════════════════════════════════════
-#  ENSEMBLE PREDICT
+#  ENSEMBLE PREDICT  (5 models)
 # ══════════════════════════════════════════════════════════════
 def _ensemble_predict(X_train, y_train, weights, X_pred) -> float:
     probs = []
     w_used = []
 
-    # XGBoost
+    # Class imbalance ratio: forces models to treat up/down equally
+    n_pos = max((y_train == 1).sum(), 1)
+    n_neg = max((y_train == 0).sum(), 1)
+    scale_pos = n_neg / n_pos   # >1 if more negatives (upweight positives)
+
+    # ── XGBoost ────────────────────────────────────────────
     if xgb is not None:
         try:
             model_xgb = xgb.XGBClassifier(
@@ -139,6 +164,7 @@ def _ensemble_predict(X_train, y_train, weights, X_pred) -> float:
                 colsample_bytree=0.8,
                 min_child_weight=5,
                 gamma=0.1,
+                scale_pos_weight=scale_pos,
                 device=XGB_DEVICE,
                 tree_method="hist",
                 eval_metric="logloss",
@@ -153,13 +179,59 @@ def _ensemble_predict(X_train, y_train, weights, X_pred) -> float:
         except Exception as e:
             log.warning(f"XGBoost failed: {e}")
 
-    # Random Forest
+    # ── LightGBM ──────────────────────────────────────────
+    if lgb is not None:
+        try:
+            model_lgb = lgb.LGBMClassifier(
+                n_estimators=100,
+                max_depth=4,
+                learning_rate=0.04,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                min_child_samples=20,
+                num_leaves=31,
+                scale_pos_weight=scale_pos,
+                verbosity=-1,
+                random_state=42,
+                n_jobs=1,
+            )
+            model_lgb.fit(X_train, y_train, sample_weight=weights)
+            p = float(model_lgb.predict_proba(X_pred)[0][1])
+            probs.append(p)
+            w_used.append(W_LGB)
+            del model_lgb
+        except Exception as e:
+            log.warning(f"LightGBM failed: {e}")
+
+    # ── CatBoost ──────────────────────────────────────────
+    if CatBoostClassifier is not None:
+        try:
+            model_cb = CatBoostClassifier(
+                iterations=100,
+                depth=4,
+                learning_rate=0.04,
+                l2_leaf_reg=3,
+                auto_class_weights="Balanced",
+                verbose=0,
+                random_seed=42,
+                thread_count=1,
+            )
+            model_cb.fit(X_train, y_train, sample_weight=weights)
+            p = float(model_cb.predict_proba(X_pred)[0][1])
+            probs.append(p)
+            w_used.append(W_CB)
+            del model_cb
+        except Exception as e:
+            log.warning(f"CatBoost failed: {e}")
+
+    # ── Random Forest ─────────────────────────────────────
     try:
         model_rf = RandomForestClassifier(
             n_estimators=80,
             max_depth=6,
             min_samples_leaf=8,
             max_features="sqrt",
+            class_weight="balanced",
             n_jobs=-1,
             random_state=42,
         )
@@ -171,11 +243,12 @@ def _ensemble_predict(X_train, y_train, weights, X_pred) -> float:
     except Exception as e:
         log.warning(f"RF failed: {e}")
 
-    # Logistic Regression
+    # ── Logistic Regression ───────────────────────────────
     try:
         model_lr = LogisticRegression(
             C=0.1,
             max_iter=500,
+            class_weight="balanced",
             random_state=42,
             solver="lbfgs",
         )
@@ -197,34 +270,42 @@ def _ensemble_predict(X_train, y_train, weights, X_pred) -> float:
 
 
 # ══════════════════════════════════════════════════════════════
-#  WALK-FORWARD ACCURACY  (fast — RF only, batch predict)
+#  PURGED WALK-FORWARD ACCURACY  (fast — RF only, batch predict)
 # ══════════════════════════════════════════════════════════════
 def _walk_forward_accuracy(X, y, weights) -> float:
     """
-    Fast walk-forward: RF only + batch predict (no per-sample loop).
-    ~50x faster than full ensemble per sample.
+    Purged walk-forward CV: 5 expanding folds, RF only for speed.
+    Purge gap = WF_PURGE_GAP bars between train end and test start
+    to prevent target leakage (forward-looking target overlaps).
     Full ensemble still used for the live prediction.
     """
-    n        = len(X)
-    test_sz  = max(30, int(n * WF_TEST_SIZE))
-    min_train= ML_MIN_SAMPLES
+    n         = len(X)
+    test_sz   = max(30, int(n * WF_TEST_SIZE))
+    min_train = ML_MIN_SAMPLES
+    purge     = WF_PURGE_GAP
     accuracies = []
 
     for fold in range(WF_N_SPLITS):
-        test_end   = n - fold * test_sz - ML_FORWARD_DAYS
+        test_end   = n - fold * test_sz
         test_start = test_end - test_sz
-        if test_start < min_train:
+        train_end  = test_start - purge   # purge gap prevents target leakage
+
+        if train_end < min_train or test_start < 0:
             break
-        X_tr = X[:test_start]; y_tr = y[:test_start]; w_tr = weights[:test_start]
+
+        X_tr = X[:train_end]; y_tr = y[:train_end]; w_tr = weights[:train_end]
         X_te = X[test_start:test_end]; y_te = y[test_start:test_end]
-        if len(X_te) < 10:
+
+        if len(X_te) < 10 or len(X_tr) < min_train:
             continue
+
         scaler  = StandardScaler()
         X_tr_sc = scaler.fit_transform(X_tr)
         X_te_sc = scaler.transform(X_te)
         rf = RandomForestClassifier(
             n_estimators=80, max_depth=5, min_samples_leaf=8,
-            max_features="sqrt", n_jobs=-1, random_state=42,
+            max_features="sqrt", class_weight="balanced",
+            n_jobs=-1, random_state=42,
         )
         rf.fit(X_tr_sc, y_tr, sample_weight=w_tr)
         preds = rf.predict(X_te_sc)
@@ -238,18 +319,22 @@ def _walk_forward_accuracy(X, y, weights) -> float:
 #  EXPLANATION  (top driving features)
 # ══════════════════════════════════════════════════════════════
 _FEATURE_LABELS = {
-    "rsi"         : "RSI",
-    "ret_5d"      : "5d Return",
-    "dist_ema20"  : "EMA20 Dist",
-    "macdh_norm"  : "MACD",
-    "vol_z"       : "Vol Z",
-    "kumo"        : "Ichimoku",
-    "ema_cross"   : "EMA Cross",
-    "rsi_dist_sma": "RSI Momentum",
-    "obv_slope_z" : "OBV",
-    "dist_ema200" : "EMA200 Dist",
-    "atr_pctile"  : "ATR Rank",
-    "ret_1d"      : "1d Return",
+    "rsi"                : "RSI",
+    "ret_5d"             : "5d Return",
+    "dist_ema20"         : "EMA20 Dist",
+    "macdh_norm"         : "MACD",
+    "vol_z"              : "Vol Z",
+    "kumo"               : "Ichimoku",
+    "ema_cross"          : "EMA Cross",
+    "rsi_dist_sma"       : "RSI Momentum",
+    "obv_slope_z"        : "OBV",
+    "dist_ema200"        : "EMA200 Dist",
+    "atr_pctile"         : "ATR Rank",
+    "ret_1d"             : "1d Return",
+    "nifty_ret_5d"       : "Nifty 5d",
+    "vix_level"          : "VIX",
+    "adx_strength"       : "ADX",
+    "market_above_ema200": "Mkt EMA200",
 }
 
 def _explain(last_row: pd.Series, prob: float) -> str:
@@ -282,6 +367,15 @@ def _explain(last_row: pd.Series, prob: float) -> str:
     obv = float(last_row.get("obv_slope_z", 0))
     if abs(obv) > 0.5:
         drivers.append(("OBV" + ("↑" if obv > 0 else "↓"), abs(obv)))
+
+    # Market regime drivers
+    vix = float(last_row.get("vix_level", 1.0))
+    if vix > 1.25:   drivers.append(("HighVIX", abs(vix - 1)))
+    elif vix < 0.6:  drivers.append(("LowVIX", abs(vix - 1)))
+
+    nifty_ret = float(last_row.get("nifty_ret_5d", 0))
+    if abs(nifty_ret) > 0.02:
+        drivers.append(("Mkt" + ("↑" if nifty_ret > 0 else "↓"), abs(nifty_ret) * 100))
 
     if not drivers:
         return "Mixed signals"

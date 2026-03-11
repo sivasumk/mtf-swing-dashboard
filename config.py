@@ -31,14 +31,18 @@ MAX_WORKERS  = 8           # Parallel download threads
 ML_FORWARD_DAYS     = 5    # Predict N-day forward direction
 ML_CACHE_TTL        = 86400  # 24 hours in seconds
 ML_MIN_SAMPLES      = 200  # Minimum bars needed to train
-ML_STRONG_BUY_PROB  = 0.57  # Buy signal: lowered from 0.60 (bull bias correction)
-ML_STRONG_SELL_PROB = 0.45  # Sell signal: raised from 0.40 (bull bias correction)
+ML_STRONG_BUY_PROB  = 0.57  # Buy signal threshold (normal regime)
+ML_STRONG_SELL_PROB = 0.45  # Sell signal threshold (normal regime)
+# Regime-adaptive: tighter thresholds when stock is below EMA200
+ML_BEAR_BUY_PROB    = 0.63  # Harder to trigger Buy when below EMA200
+ML_BEAR_SELL_PROB   = 0.48  # Easier to trigger Sell when below EMA200
 ML_TIME_DECAY       = 0.0003  # Exponential decay rate for sample weighting
 ML_TRAIN_YEARS      = 3     # Only use last N years for training (regime-aware)
 
 # Walk-forward settings
-WF_N_SPLITS     = 3        # Number of walk-forward folds
+WF_N_SPLITS     = 5        # Number of walk-forward folds (increased from 3)
 WF_TEST_SIZE    = 0.15     # Each fold test size (15% of total)
+WF_PURGE_GAP    = ML_FORWARD_DAYS  # Purge gap between train/test (prevents target leakage)
 
 # ══════════════════════════════════════════════════════════════
 #  INDICATOR THRESHOLDS

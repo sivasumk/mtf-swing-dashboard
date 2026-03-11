@@ -698,7 +698,7 @@ def render_table(df: pd.DataFrame, display_cols: list, key_suffix: str = "d"):
         ("RS_3M",    "{:.3f}"),  ("MomScore", "{:.1f}"),
         ("RSI",      "{:.1f}"),  ("ADX",      "{:.1f}"),
         ("ATR%",     "{:.2f}%"), ("52wH%",    "{:.1f}%"),
-        ("MACD",     "{:.2f}"),  ("SMI",      "{:.1f}"),
+        ("SMI",      "{:.1f}"),
         ("SMI_Signal","{:.1f}"),
     ]:
         if col in display_df.columns:

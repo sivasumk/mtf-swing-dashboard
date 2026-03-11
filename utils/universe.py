@@ -10,6 +10,7 @@ import gc
 import logging
 import sqlite3
 
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -29,6 +30,35 @@ log = logging.getLogger(__name__)
 # Signals are computed fresh each full run; filtering/sorting is in-memory
 
 
+def _compute_market_features(
+    benchmark_df: pd.DataFrame,
+    vix_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Compute market-wide features once (shared across all tickers).
+    These columns are merged into each stock's df before ML training.
+    """
+    mkt = pd.DataFrame(index=benchmark_df.index)
+    bc = benchmark_df["Close"]
+
+    mkt["nifty_ret_5d"]  = bc.pct_change(5).astype("float32")
+    mkt["nifty_ret_20d"] = bc.pct_change(20).astype("float32")
+
+    ema200 = bc.ewm(span=200, adjust=False).mean()
+    mkt["market_above_ema200"] = (bc > ema200).astype("float32")
+
+    if not vix_df.empty and "Close" in vix_df.columns:
+        vix_close = vix_df["Close"].reindex(benchmark_df.index, method="ffill")
+        # Normalize VIX: divide by 20 (typical mean) so values center ~1.0
+        mkt["vix_level"]      = (vix_close / 20.0).astype("float32")
+        mkt["vix_change_5d"]  = vix_close.pct_change(5).astype("float32")
+    else:
+        mkt["vix_level"]      = np.float32(1.0)
+        mkt["vix_change_5d"]  = np.float32(0.0)
+
+    return mkt
+
+
 def build_universe_df(
     tickers: list[str],
     conn: sqlite3.Connection,
@@ -46,8 +76,10 @@ def build_universe_df(
       6. Assemble row
     Returns complete dashboard DataFrame.
     """
-    # Load Nifty 50 benchmark once for RS calculation
+    # Load Nifty 50 benchmark + VIX once for RS and ML market features
     benchmark_df = load_ohlcv(benchmark_ticker, conn)
+    vix_df       = load_ohlcv("^INDIAVIX", conn)
+    market_cols  = _compute_market_features(benchmark_df, vix_df)
 
     rows  = []
     n     = len(tickers)
@@ -67,6 +99,10 @@ def build_universe_df(
 
             # ── Indicators ───────────────────────────────────
             df = add_indicators(df)
+
+            # ── Market regime features (for ML) ─────────────
+            for col in market_cols.columns:
+                df.loc[:, col] = market_cols[col].reindex(df.index, method="ffill")
 
             # ── Signals ──────────────────────────────────────
             signals = compute_signals(df)
@@ -145,15 +181,16 @@ from datetime import date as _date
 from pathlib import Path as _Path
 
 _ML_CACHE_DIR = _Path(__file__).parent.parent / 'data' / 'ml_cache'
+_ML_CACHE_VER = "v3"   # Bump when features/models change to invalidate cache
 
 def _cached_ml(ticker: str, df) -> tuple[float, float, str]:
     """
-    File-based ML cache keyed by ticker + today date.
+    File-based ML cache keyed by ticker + today date + model version.
     Avoids Streamlit hashing the entire DataFrame (which is slow/broken).
     Retrain once per day per ticker.
     """
     _ML_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    cache_key  = f"{ticker.replace('.','_')}_{_date.today().isoformat()}"
+    cache_key  = f"{ticker.replace('.','_')}_{_date.today().isoformat()}_{_ML_CACHE_VER}"
     cache_file = _ML_CACHE_DIR / f"{cache_key}.json"
 
     if cache_file.exists():
@@ -314,6 +351,9 @@ def build_universe_tf(
 
     benchmark_daily = load_ohlcv(benchmark_ticker, conn)
     benchmark_tf    = resample_to_tf(benchmark_daily, tf)
+    vix_daily       = load_ohlcv("^INDIAVIX", conn)
+    vix_tf          = resample_to_tf(vix_daily, tf) if not vix_daily.empty else pd.DataFrame()
+    market_cols     = _compute_market_features(benchmark_tf, vix_tf)
 
     rows  = []
     n     = len(tickers)
@@ -336,6 +376,11 @@ def build_universe_tf(
                 continue
 
             df = add_indicators(df)
+
+            # Market regime features (for ML)
+            for col in market_cols.columns:
+                df.loc[:, col] = market_cols[col].reindex(df.index, method="ffill")
+
             signals = compute_signals(df)
             if not signals:
                 fails.append(ticker)

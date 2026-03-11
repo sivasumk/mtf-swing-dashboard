@@ -1,14 +1,17 @@
 """
 ml/features.py — Feature Engineering for ML Models
 
-Features (25 total):
+Features (31 total):
   Price momentum  : lagged returns 1d, 5d, 10d, 20d
   RSI             : level + distance from 9-SMA + divergence flag
+  SMI             : level + distance from signal + zone encoding
   Volatility      : ATR%, vol_z-score, HV_ratio, BB_Width, ATR_percentile
   Trend           : dist_ema20, dist_ema200, EMA_cross, Kumo_breakout
   MACD            : histogram normalised, MACD cross signal
   Volume          : OBV slope, volume ratio
   Calendar        : day_of_week, month (seasonal effects)
+  Market regime   : nifty_ret_5d/20d, vix_level, vix_change_5d,
+                    adx_strength, market_above_ema200
 """
 
 import numpy as np
@@ -34,6 +37,10 @@ FEATURE_COLS = [
     "obv_slope_z","vol_ratio",
     # Calendar
     "day_of_week","month",
+    # Market regime
+    "nifty_ret_5d","nifty_ret_20d",
+    "vix_level","vix_change_5d",
+    "adx_strength","market_above_ema200",
 ]
 
 
@@ -102,6 +109,16 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     # ── Calendar ─────────────────────────────────────────────
     feats["day_of_week"] = pd.Series(df.index.dayofweek, index=df.index).astype("float32")
     feats["month"]       = pd.Series(df.index.month,     index=df.index).astype("float32")
+
+    # ── Market regime ─────────────────────────────────────────
+    # These columns are merged into df by universe.py from Nifty/VIX data.
+    # If missing (e.g. in tests), _get returns sensible defaults.
+    feats["nifty_ret_5d"]        = _get(df, "nifty_ret_5d", 0).astype("float32")
+    feats["nifty_ret_20d"]       = _get(df, "nifty_ret_20d", 0).astype("float32")
+    feats["vix_level"]           = _get(df, "vix_level", 1.0).clip(0, 5).astype("float32")
+    feats["vix_change_5d"]       = _get(df, "vix_change_5d", 0).clip(-1, 1).astype("float32")
+    feats["adx_strength"]        = _get(df, "ADX", 25).clip(0, 100).astype("float32")
+    feats["market_above_ema200"] = _get(df, "market_above_ema200", 1).astype("float32")
 
     # ── Target: price higher in ML_FORWARD_DAYS days ─────────
     feats["target"] = (c.shift(-ML_FORWARD_DAYS) > c).astype("int8")
