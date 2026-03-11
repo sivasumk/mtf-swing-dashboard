@@ -108,6 +108,25 @@ PRESETS = {
     "🗜️ Squeeze"        : dict(squeeze=True),
 }
 
+SCREENER_PRESETS = {
+    "🎯 Bullish Breakout": dict(
+        above_ema200=True, rsi_min=60, rsi_max=100,
+        rs_rank_max=30, donchian_bull=True,
+    ),
+    "🚀 Momentum Leaders": dict(
+        mom_min=70, rs_min=70, bullish_d=True, above_ema200=True,
+    ),
+    "🔄 Reversal Candidates": dict(
+        rsi_min=0, rsi_max=35, smi_os=True, psar_flip_bull=True,
+    ),
+    "📊 Trend + Volume": dict(
+        trending=True, vol_spurt=True, macd_bull=True, di_cross_bull=True,
+    ),
+    "💎 Fresh Breakouts": dict(
+        donchian_bull=True, vol_spurt=True, mom_min=50,
+    ),
+}
+
 # Compact view: 8 core columns only
 COMPACT_COLS = ["Rank", "Ticker", "Price", "Chg%",
                 "Trade", "D_Trend", "ML_Signal",
@@ -135,6 +154,11 @@ COL_GLOSSARY = {
     "52wH%"     : "% from 52-week high. -5% = stock is 5% below its peak.",
     "BullEng"   : "Bullish engulfing candle with volume confirmation.",
     "Hammer"    : "Hammer: small body top, lower wick ≥ 2× body — bullish reversal.",
+    "DI_Cross"  : "DI+/DI- crossover. +1=DI+ crossed above DI- (bullish), -1=opposite.",
+    "PSAR_Dir"  : "Parabolic SAR direction. +1=bullish (price above SAR), -1=bearish.",
+    "Donchian_Break": "Donchian 20-day breakout. +1=close at/above channel high, -1=at/below low.",
+    "Above_VWMA": "Price above 20-day Volume-Weighted Moving Average.",
+    "PSAR_Flip" : "PSAR just flipped direction. +1=new bullish, -1=new bearish.",
 }
 
 # ══════════════════════════════════════════════════════════════
@@ -146,6 +170,8 @@ if "preset" not in st.session_state:
     st.session_state["preset"] = None
 if "compact_mode" not in st.session_state:
     st.session_state["compact_mode"] = False
+if "screener_preset" not in st.session_state:
+    st.session_state["screener_preset"] = None
 
 
 # ══════════════════════════════════════════════════════════════
@@ -222,6 +248,39 @@ with st.sidebar:
             st.session_state["preset"] = None
             st.rerun()
 
+    # ── Screener ──────────────────────────────────────────────
+    st.divider()
+    st.markdown('<div class="sidebar-section">Screener</div>', unsafe_allow_html=True)
+
+    s_names = list(SCREENER_PRESETS.keys())
+    for i in range(0, len(s_names), 2):
+        sc1, sc2 = st.columns(2)
+        for j, col in enumerate([sc1, sc2]):
+            idx = i + j
+            if idx < len(s_names):
+                name = s_names[idx]
+                is_active = st.session_state["screener_preset"] == name
+                btn_type = "primary" if is_active else "secondary"
+                if col.button(name, key=f"screener_{idx}",
+                              use_container_width=True, type=btn_type):
+                    if st.session_state["screener_preset"] == name:
+                        st.session_state["screener_preset"] = None
+                    else:
+                        st.session_state["screener_preset"] = name
+                    st.rerun()
+
+    if st.session_state["screener_preset"]:
+        if st.button("✖ Clear Screener", key="clear_screener", use_container_width=True):
+            st.session_state["screener_preset"] = None
+            st.rerun()
+
+    with st.expander("🎚️ Screener Sliders"):
+        scr_mom_min, scr_mom_max = st.slider("MomScore Range", 0, 100, (0, 100), key="scr_mom")
+        scr_rs_min, scr_rs_max   = st.slider("RS_Score Range", 0, 100, (0, 100), key="scr_rs")
+        scr_rs_rank_max           = st.slider("RS_Rank Max (0=off)", 0, 200, 0, key="scr_rank")
+        scr_chg_min, scr_chg_max = st.slider("Chg% Range", -20.0, 20.0, (-20.0, 20.0), step=0.5, key="scr_chg")
+        scr_52wh_max              = st.slider("52wH% Min (within N% of high)", -100, 0, -100, key="scr_52wh")
+
     # ── Signal Filters ────────────────────────────────────────
     st.divider()
 
@@ -235,6 +294,10 @@ with st.sidebar:
         f_trending    = st.checkbox("Trending (ADX>25)")
         f_ranging     = st.checkbox("Ranging")
         f_above_ema200= st.checkbox("Above EMA 200")
+        f_di_cross_bull = st.checkbox("DI+ Cross (Bullish)")
+        f_psar_bull     = st.checkbox("PSAR Bullish")
+        f_psar_flip_bull= st.checkbox("PSAR Flip Bull")
+        f_above_vwma    = st.checkbox("Above VWMA20")
 
     with st.expander("📊 RSI / SMI"):
         f_rsi_bull  = st.checkbox("RSI Zone Bull (>60)")
@@ -253,6 +316,7 @@ with st.sidebar:
         f_squeeze   = st.checkbox("Volatility Squeeze")
         f_macd_bull = st.checkbox("MACD Bull Cross")
         f_vol_spurt = st.checkbox("Volume Spurt (>2×)")
+        f_donchian_bull = st.checkbox("Donchian Breakout Up")
 
     with st.expander("🕯️ Patterns"):
         f_engulf_b  = st.checkbox("Bullish Engulfing")
@@ -269,26 +333,32 @@ with st.sidebar:
                        f_above_ema200, f_rsi_bull, f_rsi_bear, f_oversold,
                        f_overbought, f_smi_bull, f_smi_os, f_smi_cross,
                        f_high_mom, f_low_mom, f_vol_break, f_squeeze,
-                       f_macd_bull, f_vol_spurt, f_engulf_b, f_engulf_br,
+                       f_macd_bull, f_vol_spurt, f_donchian_bull,
+                       f_di_cross_bull, f_psar_bull, f_psar_flip_bull, f_above_vwma,
+                       f_engulf_b, f_engulf_br,
                        f_hammer, f_ml_buy, f_ml_sell, f_conflict,
                        (rsi_min > 0 or rsi_max < 100)]
     n_active = sum(1 for v in _manual_filters if v)
     active_preset = st.session_state["preset"]
-    if n_active or active_preset:
+    active_screener = st.session_state.get("screener_preset")
+    if n_active or active_preset or active_screener:
         badge_txt = f"{n_active} filter{'s' if n_active != 1 else ''} active"
-        if active_preset:
+        if active_screener:
+            badge_txt = f"Screener: {active_screener}" + (f" + {n_active}" if n_active else "")
+        elif active_preset:
             badge_txt = f"Preset: {active_preset}" + (f" + {n_active}" if n_active else "")
         st.markdown(f'<span class="filter-badge">🔍 {badge_txt}</span>',
                     unsafe_allow_html=True)
         if st.button("✖ Clear All Filters", use_container_width=True):
             st.session_state["preset"] = None
+            st.session_state["screener_preset"] = None
             st.rerun()
 
     # ── Sort ─────────────────────────────────────────────────
     st.divider()
     sort_col = st.selectbox("🔃 Sort By",
         ["Rank","MTF_Score","RS_Score","MomScore","SMI","RSI","ADX",
-         "Chg%","ATR%","ML_Prob%","52wH%"],
+         "Chg%","ATR%","ML_Prob%","52wH%","DI_Cross","PSAR_Dir"],
     )
     _rank_cols = {"Rank", "RS_Rank"}
     sort_asc = st.checkbox("Ascending ↑", value=(sort_col in _rank_cols))
@@ -344,12 +414,35 @@ filter_dict = dict(
     smi_bull    = f_smi_bull,
     smi_os      = f_smi_os,
     smi_cross   = f_smi_cross,
+    # New indicator filters
+    di_cross_bull  = f_di_cross_bull,
+    psar_bull      = f_psar_bull,
+    psar_flip_bull = f_psar_flip_bull,
+    above_vwma     = f_above_vwma,
+    donchian_bull  = f_donchian_bull,
+    # Screener numeric sliders
+    mom_min        = scr_mom_min,
+    mom_max        = scr_mom_max,
+    rs_min         = scr_rs_min,
+    rs_max         = scr_rs_max,
+    rs_rank_max    = scr_rs_rank_max,
+    chg_min        = scr_chg_min,
+    chg_max        = scr_chg_max,
+    pct_52wh_max   = scr_52wh_max,
 )
 
 # Merge preset on top
 if active_preset and active_preset in PRESETS:
     for k, v in PRESETS[active_preset].items():
         filter_dict[k] = filter_dict.get(k) or v
+
+# Merge screener preset on top
+if active_screener and active_screener in SCREENER_PRESETS:
+    for k, v in SCREENER_PRESETS[active_screener].items():
+        if isinstance(v, bool):
+            filter_dict[k] = filter_dict.get(k) or v
+        else:
+            filter_dict[k] = v
 
 
 # ══════════════════════════════════════════════════════════════
@@ -629,7 +722,7 @@ BASE_COLS    = ["Rank","Ticker","Price","Chg%",
                 # Market context
                 "RSI_Zone","Regime","Mkt_Struct","ADX_Str","VolStatus","VolSpurt",
                 # Technical detail
-                "RSI","ADX","ATR%","MACD",">EMA20",
+                "RSI","ADX","ATR%","MACD","DI_Cross","PSAR_Dir",">EMA20",
                 # Volume
                 "Vol"]
 SMI_COLS     = ["SMI","SMI_Zone"]
