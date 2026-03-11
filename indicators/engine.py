@@ -39,53 +39,51 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     c, h, l, v = df["Close"], df["High"], df["Low"], df["Volume"]
 
     # ── EMA Cross ────────────────────────────────────────────
-    df["EMA20"]  = _safe(EMAIndicator(c, window=EMA_FAST).ema_indicator())
-    df["EMA50"]  = _safe(EMAIndicator(c, window=EMA_SLOW).ema_indicator())
-    df["EMA200"] = _safe(EMAIndicator(c, window=EMA_TREND).ema_indicator())
+    df.loc[:, "EMA20"]  = _safe(EMAIndicator(c, window=EMA_FAST).ema_indicator())
+    df.loc[:, "EMA50"]  = _safe(EMAIndicator(c, window=EMA_SLOW).ema_indicator())
+    df.loc[:, "EMA200"] = _safe(EMAIndicator(c, window=EMA_TREND).ema_indicator())
 
-    df["EMA_cross"]   = (df["EMA20"] > df["EMA50"]).astype("int8")
-    df["Above_EMA200"]= (c > df["EMA200"]).astype("int8")
+    df.loc[:, "EMA_cross"]    = (df["EMA20"] > df["EMA50"]).astype("int8")
+    df.loc[:, "Above_EMA200"] = (c > df["EMA200"]).astype("int8")
 
     # ── SuperTrend ───────────────────────────────────────────
-    df["SuperTrend_Dir"] = _supertrend(h, l, c, ST_PERIOD, ST_MULTIPLIER)
+    df.loc[:, "SuperTrend_Dir"] = _supertrend(h, l, c, ST_PERIOD, ST_MULTIPLIER)
 
     # ── ADX ──────────────────────────────────────────────────
-    adx_ind     = ADXIndicator(h, l, c, window=14)
-    df["ADX"]   = _safe(adx_ind.adx())
-    df["ADX_pos"]= _safe(adx_ind.adx_pos())
-    df["ADX_neg"]= _safe(adx_ind.adx_neg())
-    df["ADX_slope"] = df["ADX"].diff(3).astype("float32")   # rising/falling trend strength
+    adx_ind = ADXIndicator(h, l, c, window=14)
+    df.loc[:, "ADX"]       = _safe(adx_ind.adx())
+    df.loc[:, "ADX_pos"]   = _safe(adx_ind.adx_pos())
+    df.loc[:, "ADX_neg"]   = _safe(adx_ind.adx_neg())
+    df.loc[:, "ADX_slope"] = df["ADX"].diff(3).astype("float32")
 
     # ── Ichimoku ─────────────────────────────────────────────
-    df["Kumo_Breakout"] = _ichimoku_breakout(h, l, c, df.index)
+    df.loc[:, "Kumo_Breakout"] = _ichimoku_breakout(h, l, c, df.index)
 
     # ── RSI ──────────────────────────────────────────────────
-    rsi            = RSIIndicator(c, window=14).rsi()
-    df["RSI"]      = _safe(rsi)
-    df["RSI_SMA9"] = _safe(rsi.rolling(9).mean())
-    # RSI divergence: price up but RSI down (bearish) or price down but RSI up (bullish)
+    rsi = RSIIndicator(c, window=14).rsi()
+    df.loc[:, "RSI"]      = _safe(rsi)
+    df.loc[:, "RSI_SMA9"] = _safe(rsi.rolling(9).mean())
     price_dir = c.diff(5).apply(lambda x: 1 if x > 0 else -1)
     rsi_dir   = rsi.diff(5).apply(lambda x: 1 if x > 0 else -1)
-    df["RSI_Divergence"] = (price_dir != rsi_dir).astype("int8")
+    df.loc[:, "RSI_Divergence"] = (price_dir != rsi_dir).astype("int8")
 
     # ── MACD ─────────────────────────────────────────────────
-    macd_ind    = MACD(c, window_fast=MACD_FAST, window_slow=MACD_SLOW, window_sign=MACD_SIGNAL)
-    df["MACD"]  = _safe(macd_ind.macd())
-    df["MACDs"] = _safe(macd_ind.macd_signal())
-    df["MACDh"] = _safe(macd_ind.macd_diff())
-    df["MACD_cross"] = _macd_cross(df["MACD"], df["MACDs"])  # +1 bullish cross, -1 bearish
+    macd_ind = MACD(c, window_fast=MACD_FAST, window_slow=MACD_SLOW, window_sign=MACD_SIGNAL)
+    df.loc[:, "MACD"]  = _safe(macd_ind.macd())
+    df.loc[:, "MACDs"] = _safe(macd_ind.macd_signal())
+    df.loc[:, "MACDh"] = _safe(macd_ind.macd_diff())
+    df.loc[:, "MACD_cross"] = _macd_cross(df["MACD"], df["MACDs"])
 
     # ── ATR ──────────────────────────────────────────────────
-    df["ATR"]     = _safe(AverageTrueRange(h, l, c, window=14).average_true_range())
-    df["ATR_pct"] = _safe((df["ATR"] / c * 100))
-    # Historical volatility ratio (short/long) — >1 means expanding vol
-    df["HV_ratio"]= _safe(
+    df.loc[:, "ATR"]     = _safe(AverageTrueRange(h, l, c, window=14).average_true_range())
+    df.loc[:, "ATR_pct"] = _safe((df["ATR"] / c * 100))
+    df.loc[:, "HV_ratio"] = _safe(
         df["ATR_pct"].rolling(10).mean() /
         (df["ATR_pct"].rolling(30).mean().replace(0, np.nan))
     )
 
     # ATR percentile rank (0-100) over last 252 days
-    df["ATR_pctile"] = (
+    df.loc[:, "ATR_pctile"] = (
         df["ATR_pct"]
         .rolling(252, min_periods=50)
         .apply(lambda x: (x[-1] > x[:-1]).mean() * 100, raw=True)
@@ -93,63 +91,56 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # ── Bollinger Bands ──────────────────────────────────────
-    bb             = BollingerBands(c, window=BB_PERIOD, window_dev=BB_STD)
-    df["BB_Upper"] = _safe(bb.bollinger_hband())
-    df["BB_Lower"] = _safe(bb.bollinger_lband())
-    df["BB_Mid"]   = _safe(bb.bollinger_mavg())
-    df["BB_Width"] = _safe(bb.bollinger_wband())
-    df["BB_pct"]   = _safe(bb.bollinger_pband())  # 0=lower band, 1=upper band
+    bb = BollingerBands(c, window=BB_PERIOD, window_dev=BB_STD)
+    df.loc[:, "BB_Upper"] = _safe(bb.bollinger_hband())
+    df.loc[:, "BB_Lower"] = _safe(bb.bollinger_lband())
+    df.loc[:, "BB_Mid"]   = _safe(bb.bollinger_mavg())
+    df.loc[:, "BB_Width"] = _safe(bb.bollinger_wband())
+    df.loc[:, "BB_pct"]   = _safe(bb.bollinger_pband())
 
     # ── Keltner + Squeeze ────────────────────────────────────
     try:
-        kc            = KeltnerChannel(h, l, c, window=KC_PERIOD, window_atr=KC_ATR_PERIOD)
-        df["KC_Upper"]= _safe(kc.keltner_channel_hband())
-        df["KC_Lower"]= _safe(kc.keltner_channel_lband())
-        df["Squeeze"] = (
+        kc = KeltnerChannel(h, l, c, window=KC_PERIOD, window_atr=KC_ATR_PERIOD)
+        df.loc[:, "KC_Upper"] = _safe(kc.keltner_channel_hband())
+        df.loc[:, "KC_Lower"] = _safe(kc.keltner_channel_lband())
+        df.loc[:, "Squeeze"]  = (
             (df["BB_Upper"] < df["KC_Upper"]) &
             (df["BB_Lower"] > df["KC_Lower"])
         ).astype("int8")
     except Exception:
-        df["Squeeze"] = np.int8(0)
+        df.loc[:, "Squeeze"] = np.int8(0)
 
     # ── Stochastic Momentum Index (SMI) ─────────────────────
-    # Pine Script equivalent: SMI(10, 3, 3)
-    # Smoother than Stoch: double-EMA smoothing + centred on range midpoint
-    # Range: -100 to +100  |  Overbought >40  |  Oversold <-40
-    df["SMI"], df["SMI_Signal"] = _smi(h, l, c, length_k=10, length_d=3, length_ema=3)
+    smi_val, smi_signal = _smi(h, l, c, length_k=10, length_d=3, length_ema=3)
+    df.loc[:, "SMI"]        = smi_val
+    df.loc[:, "SMI_Signal"] = smi_signal
 
     # ── Williams %R ──────────────────────────────────────────
-    df["WilliamsR"] = _safe(WilliamsRIndicator(h, l, c, lbp=14).williams_r())
+    df.loc[:, "WilliamsR"] = _safe(WilliamsRIndicator(h, l, c, lbp=14).williams_r())
 
     # ── Rate of Change ───────────────────────────────────────
-    df["ROC10"] = _safe(ROCIndicator(c, window=10).roc())
-    df["ROC20"] = _safe(ROCIndicator(c, window=20).roc())
+    df.loc[:, "ROC10"] = _safe(ROCIndicator(c, window=10).roc())
+    df.loc[:, "ROC20"] = _safe(ROCIndicator(c, window=20).roc())
 
     # ── Volume indicators ────────────────────────────────────
-    df["OBV"]       = _safe(OnBalanceVolumeIndicator(c, v).on_balance_volume())
-    df["OBV_slope"] = _safe(df["OBV"].diff(5))
-    vol_ma5         = v.rolling(5).mean().replace(0, 1)
-    vol_ma20        = v.rolling(20).mean().replace(0, 1)
-    df["Vol_ratio"] = _safe((v / vol_ma20))          # vs 20d avg
-    df["Vol_ratio5"]= _safe((v / vol_ma5))           # vs 5d avg
+    df.loc[:, "OBV"]       = _safe(OnBalanceVolumeIndicator(c, v).on_balance_volume())
+    df.loc[:, "OBV_slope"] = _safe(df["OBV"].diff(5))
+    vol_ma5  = v.rolling(5).mean().replace(0, 1)
+    vol_ma20 = v.rolling(20).mean().replace(0, 1)
+    df.loc[:, "Vol_ratio"]  = _safe((v / vol_ma20))
+    df.loc[:, "Vol_ratio5"] = _safe((v / vol_ma5))
 
     # ── Market Structure (HH/HL/LH/LL) ──────────────────────
-    # Use 10-bar swing pivots
-    df["Swing_High"] = h.rolling(10, center=True).max()
-    df["Swing_Low"]  = l.rolling(10, center=True).min()
-    # Classify last 2 swings
-    sh = h.rolling(20).max()
-    sl = l.rolling(20).min()
-    ph = h.rolling(40).max()   # prior swing high
-    pl = l.rolling(40).min()   # prior swing low
-    df["Mkt_Struct"] = _market_structure(h, l, c)
+    df.loc[:, "Swing_High"] = h.rolling(10, center=True).max()
+    df.loc[:, "Swing_Low"]  = l.rolling(10, center=True).min()
+    df.loc[:, "Mkt_Struct"] = _market_structure(h, l, c)
 
     # ── Price context ────────────────────────────────────────
-    df["High_52w"]       = h.rolling(252, min_periods=50).max().astype("float32")
-    df["Low_52w"]        = l.rolling(252, min_periods=50).min().astype("float32")
-    df["Pct_from_52wH"]  = _safe(((c - df["High_52w"]) / df["High_52w"] * 100))
-    df["Pct_from_52wL"]  = _safe(((c - df["Low_52w"])  / df["Low_52w"]  * 100))
-    df["Dist_EMA20_pct"] = _safe(((c - df["EMA20"])    / df["EMA20"]    * 100))
+    df.loc[:, "High_52w"]       = h.rolling(252, min_periods=50).max().astype("float32")
+    df.loc[:, "Low_52w"]        = l.rolling(252, min_periods=50).min().astype("float32")
+    df.loc[:, "Pct_from_52wH"]  = _safe(((c - df["High_52w"]) / df["High_52w"] * 100))
+    df.loc[:, "Pct_from_52wL"]  = _safe(((c - df["Low_52w"])  / df["Low_52w"]  * 100))
+    df.loc[:, "Dist_EMA20_pct"] = _safe(((c - df["EMA20"])    / df["EMA20"]    * 100))
 
     return df
 
@@ -281,13 +272,12 @@ def _macd_cross(macd: pd.Series, signal: pd.Series) -> pd.Series:
     -1 = bearish crossover (MACD crossed below signal)
      0 = no cross
     """
-    cross = pd.Series(0, index=macd.index, dtype="int8")
     above = macd > signal
-    for i in range(1, len(macd)):
-        if above.iloc[i] and not above.iloc[i - 1]:
-            cross.iloc[i] = 1
-        elif not above.iloc[i] and above.iloc[i - 1]:
-            cross.iloc[i] = -1
+    cross_up   = above & ~above.shift(1, fill_value=False)   # False→True
+    cross_down = ~above & above.shift(1, fill_value=False)   # True→False
+    cross = pd.Series(np.int8(0), index=macd.index)
+    cross[cross_up]   = np.int8(1)
+    cross[cross_down] = np.int8(-1)
     return cross
 
 

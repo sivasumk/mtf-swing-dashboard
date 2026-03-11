@@ -109,8 +109,7 @@ def build_universe_df(
 
         finally:
             # Memory cleanup every 20 tickers
-            if "df" in dir() and i % 20 == 19:
-                del df
+            if i % 20 == 19:
                 gc.collect()
 
     if fails:
@@ -141,7 +140,7 @@ def build_universe_df(
 
 
 # File-based ML cache: {ticker}_{date}.json in data/ml_cache/
-import json, hashlib
+import json
 from datetime import date as _date
 from pathlib import Path as _Path
 
@@ -197,12 +196,12 @@ def apply_filters(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
         f = f[f["RSI"] < 30]
     if filters.get("overbought"):
         f = f[f["RSI"] > 70]
-    if filters.get("engulf_bull"):
-        f = f[f["BullEng"] == "✅"]
-    if filters.get("engulf_bear"):
-        f = f[f["BearEng"] == "🔴"]
-    if filters.get("hammer"):
-        f = f[f["Hammer"] == "🔨"]
+    if filters.get("engulf_bull") and "Pattern" in f.columns:
+        f = f[f["Pattern"].str.contains("BullEng", na=False)]
+    if filters.get("engulf_bear") and "Pattern" in f.columns:
+        f = f[f["Pattern"].str.contains("BearEng", na=False)]
+    if filters.get("hammer") and "Pattern" in f.columns:
+        f = f[f["Pattern"].str.contains("Hammer", na=False)]
     if filters.get("vol_expansion"):
         f = f[f["_vol"] == "Expansion"]
     if filters.get("squeeze"):
@@ -216,17 +215,17 @@ def apply_filters(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
     if filters.get("ranging"):
         f = f[f["_regime"] == "Ranging"]
     if filters.get("ml_buy"):
-        f = f[f["_ml_prob"] > 0.58]
+        f = f[f["_ml_prob"] > ML_STRONG_BUY_PROB]
     if filters.get("ml_sell"):
-        f = f[f["_ml_prob"] < 0.42]
+        f = f[f["_ml_prob"] < ML_STRONG_SELL_PROB]
     if filters.get("above_ema200"):
         f = f[f["_above_ema200"] == 1]
-    if filters.get("macd_bull"):
-        f = f[f["MACD"] == "🟢 Bull"]
+    if filters.get("macd_bull") and "MACD" in f.columns:
+        f = f[f["MACD"].astype(str).str.startswith("🟢", na=False)]
     if filters.get("conflict"):
         f = f[f["⚠️Conflict"] == "⚠️"]
     if filters.get("vol_spurt") and "VolSpurt" in f.columns:
-        f = f[f["VolSpurt"].isin(["🟢 Spurt", "🔴 Dump", "⚡ High"])]
+        f = f[f["VolSpurt"].isin(["🟢 SPURT×2", "🔴 DUMP×2", "⚡ Abv5+20"])]
     if filters.get("smi_bull") and "SMI" in f.columns:
         f = f[f["SMI"] > 0]
     if filters.get("smi_os") and "SMI" in f.columns:
@@ -370,15 +369,12 @@ def build_universe_tf(
             # Prefix weekly/monthly columns so they don't clash when merged
             tf_row = {"Ticker": row["Ticker"]}
             prefix = tf.replace("ME", "M")   # W_ or M_
-            skip   = {"Ticker", "Price", "RS_Score", "RS_Rank", "RS_Trend",
-                      "RS_1M", "RS_3M", "Rank", "Rank_Score", "RS_Rank"}
+            skip   = {"Ticker", "RS_Score", "RS_Rank", "RS_Trend",
+                      "RS_1M", "RS_3M", "Rank", "Rank_Score"}
             for k, v in row.items():
-                if k == "Ticker":
+                if k in skip:
                     continue
-                elif k in ("Price", "Chg%"):
-                    tf_row[f"{prefix}_{k}"] = v
-                else:
-                    tf_row[f"{prefix}_{k}"] = v
+                tf_row[f"{prefix}_{k}"] = v
 
             rows.append(tf_row)
 

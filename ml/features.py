@@ -1,7 +1,7 @@
 """
 ml/features.py — Feature Engineering for ML Models
 
-Features (22 total):
+Features (25 total):
   Price momentum  : lagged returns 1d, 5d, 10d, 20d
   RSI             : level + distance from 9-SMA + divergence flag
   Volatility      : ATR%, vol_z-score, HV_ratio, BB_Width, ATR_percentile

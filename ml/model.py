@@ -144,7 +144,6 @@ def _ensemble_predict(X_train, y_train, weights, X_pred) -> float:
                 eval_metric="logloss",
                 verbosity=0,
                 random_state=42,
-                use_label_encoder=False,
             )
             model_xgb.fit(X_train, y_train, sample_weight=weights)
             p = float(model_xgb.predict_proba(X_pred)[0][1])

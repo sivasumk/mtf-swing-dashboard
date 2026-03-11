@@ -144,7 +144,7 @@ def compute_signals(df: pd.DataFrame) -> dict:
     kumo_val    = int(last.get("Kumo_Breakout", 0) or 0)
 
     # ── Price context ─────────────────────────────────────────
-    above_ema20  = bool(last.get("Dist_EMA20_pct", 0) or 0 > 0)
+    above_ema20  = float(last.get("Dist_EMA20_pct", 0) or 0) > 0
     above_ema200 = int(last.get("Above_EMA200", 0) or 0) == 1
     pct_52wh     = float(last.get("Pct_from_52wH", 0) or 0)
     pct_52wl     = float(last.get("Pct_from_52wL", 0) or 0)
@@ -512,4 +512,6 @@ def format_row(ticker: str, signals: dict,
         "RS_1M"       : rs["rs_1m"]     if rs else 1.0,
         "RS_3M"       : rs["rs_3m"]     if rs else 1.0,
         "RS_Rank"     : 0,
+        "SMI_Cross"   : t.get("SMI_Cross", 0),
+        "VolSpurt"    : t.get("Vol", "—"),
     }

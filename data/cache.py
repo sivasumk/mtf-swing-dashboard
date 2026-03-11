@@ -47,9 +47,6 @@ def get_conn() -> sqlite3.Connection:
             PRIMARY KEY (ticker, date)
         )
     """)
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_ticker_date ON ohlcv(ticker,date)"
-    )
     conn.commit()
     return conn
 

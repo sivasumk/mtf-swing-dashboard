@@ -163,8 +163,9 @@ with st.sidebar:
 
     # ── Universe ──────────────────────────────────────────────
     st.divider()
-    default_idx = list(UNIVERSE_MAP.keys()).index("Nifty Indices Only") \
-                  if "Nifty Indices Only" in UNIVERSE_MAP else 0
+    default_idx = next(
+        (i for i, k in enumerate(UNIVERSE_MAP) if "Nifty Indices Only" in k), 0
+    )
     universe_choice = st.selectbox("🌐 Universe", list(UNIVERSE_MAP.keys()),
                                    index=default_idx, label_visibility="visible")
     tickers = UNIVERSE_MAP[universe_choice]
@@ -345,7 +346,7 @@ if active_preset and active_preset in PRESETS:
 #  DATA PIPELINE
 # ══════════════════════════════════════════════════════════════
 conn = get_conn()
-_all_tickers    = tickers + list(INDEX_TICKERS.values())
+_all_tickers    = list(dict.fromkeys(tickers + list(INDEX_TICKERS.values())))
 _dl_done_key    = f"batch_dl_done_{universe_choice}"
 _delta_done_key = "delta_done"
 
