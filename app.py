@@ -348,7 +348,7 @@ if active_preset and active_preset in PRESETS:
 conn = get_conn()
 _all_tickers    = list(dict.fromkeys(tickers + list(INDEX_TICKERS.values())))
 _dl_done_key    = f"batch_dl_done_{universe_choice}"
-_delta_done_key = "delta_done"
+_delta_done_key = f"delta_done_{universe_choice}"
 
 if not st.session_state.get(_dl_done_key):
     dl_msg = st.empty()

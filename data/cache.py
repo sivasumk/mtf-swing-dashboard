@@ -284,10 +284,23 @@ def delta_update_parallel(
 
     # Write serially — one ticker at a time, same connection
     updated = 0
+    failed  = []
     for ticker, delta in fetched.items():
         if not delta.empty:
             write_cache(ticker, delta, conn)
             updated += 1
+        else:
+            failed.append(ticker)
+
+    # Retry failed tickers sequentially (handles rate-limiting)
+    if failed:
+        log.info(f"delta_update: retrying {len(failed)} failed tickers sequentially")
+        for ticker in failed:
+            start = next(s for t, s in stale if t == ticker)
+            delta = fetch_single(ticker, start)
+            if not delta.empty:
+                write_cache(ticker, delta, conn)
+                updated += 1
 
     log.info(f"delta_update: updated {updated}/{len(stale)} tickers")
 
