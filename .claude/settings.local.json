@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(python test_all.py)",
-      "Bash(PYTHONIOENCODING=utf-8 python test_all.py)"
-    ]
-  }
-}
