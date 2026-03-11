@@ -44,10 +44,12 @@ st.markdown("""
 <style>
 /* Market context bar */
 .mkt-bar {
-    display: flex; gap: 24px; align-items: center;
-    background: #141820; border-radius: 10px;
-    padding: 10px 20px; margin-bottom: 10px;
-    border: 1px solid #2a2f3e;
+    display: flex; gap: 20px; align-items: center;
+    background: linear-gradient(135deg, #141820 0%, #1a1f2e 100%);
+    border-radius: 12px;
+    padding: 12px 24px; margin-bottom: 12px;
+    border: 1px solid #1e2535;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
 }
 .mkt-item { display: flex; flex-direction: column; align-items: center; }
 .mkt-label { font-size: 10px; color: #8899aa; text-transform: uppercase; letter-spacing: 1px; }
@@ -55,22 +57,27 @@ st.markdown("""
 .mkt-chg.up   { color: #4caf50; font-size: 12px; }
 .mkt-chg.down { color: #f44336; font-size: 12px; }
 
-/* Regime badge */
+/* Regime badge with glow */
 .regime-bull { background:#1a3325; color:#4caf50; border:1px solid #4caf50;
-               border-radius:6px; padding:3px 10px; font-size:12px; font-weight:600; }
+               border-radius:8px; padding:4px 14px; font-size:12px; font-weight:700;
+               box-shadow:0 0 8px rgba(76,175,80,0.3); letter-spacing:0.5px; }
 .regime-bear { background:#2d1b1b; color:#f44336; border:1px solid #f44336;
-               border-radius:6px; padding:3px 10px; font-size:12px; font-weight:600; }
+               border-radius:8px; padding:4px 14px; font-size:12px; font-weight:700;
+               box-shadow:0 0 8px rgba(244,67,54,0.3); letter-spacing:0.5px; }
 .regime-neut { background:#1e2030; color:#ffcc02; border:1px solid #ffcc02;
-               border-radius:6px; padding:3px 10px; font-size:12px; font-weight:600; }
+               border-radius:8px; padding:4px 14px; font-size:12px; font-weight:700;
+               box-shadow:0 0 8px rgba(255,204,2,0.2); letter-spacing:0.5px; }
 
 /* Preset buttons row */
 .preset-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
 
-/* Filter badge */
+/* Filter badge with gradient */
 .filter-badge {
-    background: #e65100; color: white; border-radius: 12px;
-    padding: 2px 10px; font-size: 11px; font-weight: 700;
+    background: linear-gradient(90deg, #e65100, #ff8f00);
+    color: white; border-radius: 16px;
+    padding: 3px 14px; font-size: 11px; font-weight: 700;
     display: inline-block; margin-left: 6px;
+    box-shadow: 0 1px 4px rgba(230,81,0,0.4);
 }
 
 /* Watchlist chip */
@@ -79,10 +86,12 @@ st.markdown("""
     border: 1px solid #3d5afe; border-radius: 20px;
     padding: 3px 12px; margin: 3px; font-size: 13px;
 }
-/* Tighter table font */
-.stDataFrame { font-size: 12px !important; }
-/* Compact sidebar */
-section[data-testid="stSidebar"] .stExpander { margin-bottom: 4px; }
+
+/* Sidebar section headers */
+.sidebar-section {
+    font-size: 11px; color: #8899bb; text-transform: uppercase;
+    letter-spacing: 1.5px; margin: 12px 0 4px 0; font-weight: 600;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -100,8 +109,9 @@ PRESETS = {
 }
 
 # Compact view: 8 core columns only
-COMPACT_COLS = ["Rank", "Ticker", "Price", "Chg%", "D_Trend",
-                "RSI_Zone", "MomScore", "RS_Score", "SMI", "ML_Signal"]
+COMPACT_COLS = ["Rank", "Ticker", "Price", "Chg%",
+                "Trade", "D_Trend", "ML_Signal",
+                "MomScore", "RS_Score", "RSI_Zone"]
 
 # Column glossary for tooltips
 COL_GLOSSARY = {
@@ -186,7 +196,7 @@ with st.sidebar:
 
     # ── Quick-Scan Presets ────────────────────────────────────
     st.divider()
-    st.markdown("**⚡ Quick Scans**")
+    st.markdown('<div class="sidebar-section">Quick Scans</div>', unsafe_allow_html=True)
 
     # Show presets as 2-column button grid
     p_names = list(PRESETS.keys())
@@ -285,7 +295,7 @@ with st.sidebar:
 
     # ── Columns ───────────────────────────────────────────────
     st.divider()
-    st.markdown("**🗂️ Show Columns**")
+    st.markdown('<div class="sidebar-section">Show Columns</div>', unsafe_allow_html=True)
     compact_mode = st.toggle("⚡ Compact View (8 cols)",
                              value=st.session_state["compact_mode"],
                              help="Show only the 8 most important columns. "
@@ -611,14 +621,22 @@ st.divider()
 # ══════════════════════════════════════════════════════════════
 #  COLUMN SETS
 # ══════════════════════════════════════════════════════════════
-BASE_COLS    = ["Rank","Ticker","Price","Chg%","Trade","D_Trend","Mkt_Struct",
-                "RSI_Zone","Regime","ADX_Str","MomScore","VolStatus","Vol",
-                "RSI","ADX","ATR%","MACD",">EMA20"]
+BASE_COLS    = ["Rank","Ticker","Price","Chg%",
+                # Decision signals
+                "Trade","D_Trend","ML_Signal",
+                # Conviction scores
+                "MomScore","RS_Score",
+                # Market context
+                "RSI_Zone","Regime","Mkt_Struct","ADX_Str","VolStatus","VolSpurt",
+                # Technical detail
+                "RSI","ADX","ATR%","MACD",">EMA20",
+                # Volume
+                "Vol"]
 SMI_COLS     = ["SMI","SMI_Zone"]
 CONTEXT_COLS = [">EMA200","52wH%"]
-RS_COLS      = ["RS_Score","RS_Rank","RS_Trend","RS_1M","RS_3M"]
+RS_COLS      = ["RS_Rank","RS_Trend","RS_1M","RS_3M"]
 PATTERN_COLS = ["Pattern"]
-ML_COLS      = ["ML_Prob%","ML_Acc%","ML_Signal","ML_Reason","⚠️Conflict"]
+ML_COLS      = ["ML_Signal","ML_Prob%","ML_Acc%","ML_Reason","⚠️Conflict"]
 
 def _tf_cols(prefix, full=False):
     compact = [f"{prefix}_D_Trend", f"{prefix}_RSI_Zone",
@@ -647,6 +665,9 @@ def _build_display_cols(df_cols, prefix=None, full_mtf=False):
     if show_rs:        cols += RS_COLS
     if show_patterns:  cols += PATTERN_COLS
     if show_ml and run_ml: cols += ML_COLS
+    # Deduplicate (ML_Signal is in both BASE and ML_COLS)
+    seen = set()
+    cols = [c for c in cols if not (c in seen or seen.add(c))]
     return [c for c in cols if c in df_cols]
 
 
@@ -658,21 +679,26 @@ def render_table(df: pd.DataFrame, display_cols: list, key_suffix: str = "d"):
         st.info("No stocks match the current filters. Try relaxing them.")
         return
 
-    # ── Stats bar ────────────────────────────────────────────
+    # ── Stats bar (pill badges) ────────────────────────────────
     stats  = universe_stats(df)
-    s_cols = st.columns(8)
-    metrics = [
-        ("Showing",      f"{len(df)}/{stats.get('total', len(df))}"),
-        ("🟢 Bullish",   stats.get("bullish", 0)),
-        ("🔴 Bearish",   stats.get("bearish", 0)),
-        ("📈 Trending",  stats.get("trending", 0)),
-        ("🐂 RSI Bull",  stats.get("rsi_bull", 0)),
-        ("🐻 RSI Bear",  stats.get("rsi_bear", 0)),
-        ("🤖 ML Buy",    stats.get("ml_buy", 0)),
-        ("🤖 ML Sell",   stats.get("ml_sell", 0)),
+    items = [
+        ("Showing", f"{len(df)}/{stats.get('total', len(df))}", "#5c7cfa"),
+        ("Bullish", stats.get("bullish", 0), "#4caf50"),
+        ("Bearish", stats.get("bearish", 0), "#f44336"),
+        ("Trending", stats.get("trending", 0), "#7c4dff"),
+        ("RSI Bull", stats.get("rsi_bull", 0), "#26a69a"),
+        ("RSI Bear", stats.get("rsi_bear", 0), "#ef5350"),
+        ("ML Buy", stats.get("ml_buy", 0), "#00e676"),
+        ("ML Sell", stats.get("ml_sell", 0), "#ff5252"),
     ]
-    for col, (label, val) in zip(s_cols, metrics):
-        col.metric(label, val)
+    pills = "".join(
+        f'<div class="stat-pill">'
+        f'<span class="stat-label">{label}</span>'
+        f'<span class="stat-val" style="color:{color}">{val}</span>'
+        f'</div>'
+        for label, val, color in items
+    )
+    st.markdown(f'<div class="stats-bar">{pills}</div>', unsafe_allow_html=True)
 
     # ── Market regime warning ────────────────────────────────
     if mkt_regime == "Bear" and not filter_dict.get("bearish_d"):
@@ -936,10 +962,12 @@ if w_done and m_done and not daily_df.empty:
         )
         full_mtf = sort_df(full_mtf, "MTF_Score", ascending=False)
         full_cols = ["Rank","MTF_Score","Ticker","Price","Chg%",
-                     "D_Trend","W_D_Trend","M_D_Trend",
-                     "RSI_Zone","W_RSI_Zone","M_RSI_Zone",
+                     "Trade","D_Trend","W_D_Trend","M_D_Trend",
+                     "ML_Signal",
                      "MomScore","W_MomScore","M_MomScore",
-                     "RS_Score","SMI","ML_Signal"]
+                     "RS_Score",
+                     "RSI_Zone","W_RSI_Zone","M_RSI_Zone",
+                     "SMI"]
         full_cols = [c for c in full_cols if c in full_mtf.columns]
         render_table(full_mtf, full_cols, key_suffix="full_mtf")
 
