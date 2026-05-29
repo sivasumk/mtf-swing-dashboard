@@ -466,6 +466,8 @@ def _ticker_detail_card(df, key_suffix):
             atr_pct_val = float(atr_pct_val.replace("%",""))
         except Exception:
             atr_pct_val = 1.0
+    if pd.isna(atr_pct_val):
+        atr_pct_val = 1.0
     atr_pct = float(atr_pct_val) / 100
     atr_abs = price * atr_pct
     stop    = price - 2 * atr_abs
@@ -486,7 +488,7 @@ def _ticker_detail_card(df, key_suffix):
     conflict = row.get("\u26a0\ufe0fConflict", "\u2014")
 
     def _is_num(v):
-        return isinstance(v, (int, float))
+        return isinstance(v, (int, float)) and not isinstance(v, bool) and not pd.isna(v)
 
     signals_bull = [
         "Bullish" in str(trend),
