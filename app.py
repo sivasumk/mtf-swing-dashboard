@@ -26,6 +26,7 @@ from data.cache import (
     batch_download_missing, delta_update_parallel,
     cache_stats,
 )
+from data.snapshot import restore_if_empty
 from utils.universe import (
     build_universe_df, build_universe_tf, merge_mtf,
     apply_filters, sort_df, universe_stats,
@@ -146,6 +147,18 @@ if "preset" not in st.session_state:
     st.session_state["preset"] = None
 if "compact_mode" not in st.session_state:
     st.session_state["compact_mode"] = False
+
+
+# ══════════════════════════════════════════════════════════════
+#  CACHE SNAPSHOT RESTORE  (Streamlit Cloud cold-start priming)
+#  Restore the committed DB snapshot before any get_conn() call so a
+#  fresh container skips the full yfinance download (delta-update still
+#  tops up to today). No-op once the DB is populated.
+# ══════════════════════════════════════════════════════════════
+if "snapshot_checked" not in st.session_state:
+    if restore_if_empty():
+        st.toast("Loaded cached data snapshot — skipping full download.", icon="📦")
+    st.session_state["snapshot_checked"] = True
 
 
 # ══════════════════════════════════════════════════════════════
