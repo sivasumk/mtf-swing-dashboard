@@ -27,6 +27,7 @@ from data.cache import (
     cache_stats,
 )
 from data.snapshot import restore_if_empty
+from utils.track_record import annotate as annotate_track, setup_stats, load_log
 from utils.universe import (
     build_universe_df, build_universe_tf, merge_mtf,
     apply_filters, sort_df, universe_stats,
@@ -680,6 +681,8 @@ def _build_display_cols(df_cols, prefix=None, full_mtf=False):
     if show_rs:        cols += RS_COLS
     if show_patterns:  cols += PATTERN_COLS
     if show_ml and run_ml: cols += ML_COLS
+    # Historical setup-edge columns (present only once the signal log matures)
+    cols += [c for c in ("Edge%", "EdgeRet%", "EdgeN") if c in df_cols]
     # Deduplicate (ML_Signal is in both BASE and ML_COLS)
     seen = set()
     cols = [c for c in cols if not (c in seen or seen.add(c))]
@@ -741,6 +744,7 @@ def render_table(df: pd.DataFrame, display_cols: list, key_suffix: str = "d"):
         ("ATR%",     "{:.2f}%"), ("52wH%",    "{:.1f}%"),
         ("SMI",      "{:.1f}"),
         ("SMI_Signal","{:.1f}"),
+        ("Edge%",    "{:.1f}%"), ("EdgeRet%", "{:.2f}%"), ("EdgeN", "{:.0f}"),
     ]:
         if col in display_df.columns:
             display_df[col] = _fmt_num(display_df[col], fmt)
@@ -790,13 +794,14 @@ def render_table(df: pd.DataFrame, display_cols: list, key_suffix: str = "d"):
 
 
 # ══════════════════════════════════════════════════════════════
-#  4 TABS  (Daily | Weekly | Monthly | Watchlist)
+#  5 TABS  (Daily | Weekly | Monthly | Watchlist | Track Record)
 # ══════════════════════════════════════════════════════════════
-tab_d, tab_w, tab_m, tab_wl = st.tabs([
+tab_d, tab_w, tab_m, tab_wl, tab_tr = st.tabs([
     "📅 Daily",
     "📆 Weekly",
     "🗓️ Monthly",
     f"📌 Watchlist ({len(st.session_state.get('watchlist',[]))})",
+    "📚 Track Record",
 ])
 
 
@@ -812,6 +817,9 @@ with tab_d:
     prog_d   = st.progress(0, text="Loading daily signals …")
     daily_df = build_universe_df(tickers, conn, run_ml=run_ml, progress_bar=prog_d)
     prog_d.empty()
+    # Annotate with how each setup has historically performed (no-op until the
+    # committed signal log has scored outcomes). Ranking is left untouched.
+    daily_df = annotate_track(daily_df)
 
     if daily_df.empty:
         st.error("No daily data. Click 🔄 Refresh.")
@@ -957,6 +965,55 @@ with tab_wl:
             if t not in wl:
                 st.session_state["watchlist"] = wl + [t]
                 st.rerun()
+
+
+# ─────────────────────────────────────────────────────────────
+#  TAB 5 — TRACK RECORD  (learning from past daily runs)
+# ─────────────────────────────────────────────────────────────
+with tab_tr:
+    st.subheader("📚 Track Record")
+    st.caption(
+        "How each kind of setup has actually performed. The daily job logs every "
+        "signal and scores it on the realised 5-day forward move, direction-aware "
+        "(LONG hits if price rose, SHORT if it fell). Annotation only — it does "
+        "**not** change today's ranking."
+    )
+
+    tr_log = load_log()
+    tr_done = (tr_log[tr_log["outcome_filled"].fillna(0).astype(int) == 1]
+               if not tr_log.empty else tr_log)
+
+    if tr_log.empty:
+        st.info("No signals logged yet. The daily GitHub Action starts populating "
+                "this after its first run.")
+    elif tr_done.empty:
+        st.info(f"{len(tr_log)} signals logged, but none have completed the 5-day "
+                "horizon yet. Hit-rates appear once the earliest signals mature.")
+    else:
+        _sign = tr_done["trade"].map({"LONG": 1, "SHORT": -1})
+        _edge = (tr_done["fwd_ret"] * _sign).dropna()
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Signals logged", f"{len(tr_log)}")
+        m2.metric("Outcomes scored", f"{len(tr_done)}")
+        m3.metric("Overall hit-rate", f"{tr_done['dir_hit'].mean() * 100:.1f}%")
+        m4.metric("Avg edge / trade", f"{_edge.mean() * 100:.2f}%")
+
+        st.divider()
+        st.markdown("**Per-setup performance** "
+                    "_(signature = Direction | Regime | RSI-zone | Volume)_")
+        stats = setup_stats(tr_log, min_n=1)
+        if stats.empty:
+            st.info("Not enough scored outcomes per setup yet.")
+        else:
+            tbl = stats.rename(columns={
+                "setup_sig": "Setup", "n": "N",
+                "hit_rate": "Hit %", "avg_ret": "Avg Edge %",
+            })
+            st.dataframe(tbl, width="stretch", hide_index=True,
+                         height=min(80 + len(tbl) * TABLE_ROW_HEIGHT, TABLE_MAX_HEIGHT))
+            st.caption("Hit % = share of signals whose 5-day move went the signal's "
+                       "way. Avg Edge % = mean direction-adjusted 5-day return. "
+                       "Small N = treat as noise.")
 
 
 # ─────────────────────────────────────────────────────────────

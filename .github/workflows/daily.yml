@@ -1,0 +1,56 @@
+name: Daily signal log
+
+# Runs after NSE close (15:30 IST = 10:00 UTC) on weekdays to score the
+# universe, append today's signals, back-fill matured 5-day outcomes, and
+# commit the learning log back to the repo so it survives Streamlit Cloud's
+# ephemeral disk. Manual runs are allowed via the "Run workflow" button.
+on:
+  schedule:
+    - cron: "45 10 * * 1-5"   # 10:45 UTC, Mon-Fri
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-signal-log
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run daily update
+        run: python scripts/daily_update.py --universe nifty100
+
+      - name: Commit results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/signal_log.csv
+          # The cache snapshot is a multi-MB binary; refresh it weekly (Fridays)
+          # only so daily commits don't bloat git history. Cold-start delta-update
+          # tops up the few intervening days regardless.
+          if [ "$(date -u +%u)" = "5" ]; then
+            git add data/cache_snapshot.db.gz
+          fi
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Daily signal log update ($(date -u +%F))"
+            git push
+          fi
