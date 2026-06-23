@@ -8,7 +8,7 @@ import logging
 import numpy as np
 import pandas as pd
 
-from ta.trend import EMAIndicator, MACD, ADXIndicator, IchimokuIndicator
+from ta.trend import EMAIndicator, MACD, ADXIndicator, IchimokuIndicator, PSARIndicator
 from ta.momentum import RSIIndicator, WilliamsRIndicator, ROCIndicator
 from ta.volatility import AverageTrueRange, BollingerBands, KeltnerChannel
 from ta.volume import OnBalanceVolumeIndicator
@@ -20,6 +20,7 @@ from config import (
     BB_PERIOD, BB_STD,
     KC_PERIOD, KC_ATR_PERIOD,
     MACD_FAST, MACD_SLOW, MACD_SIGNAL,
+    DONCHIAN_PERIOD, PSAR_STEP, PSAR_MAX_STEP, VWMA_PERIOD,
 )
 
 log = logging.getLogger(__name__)
@@ -141,6 +142,47 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df.loc[:, "Pct_from_52wH"]  = _safe(((c - df["High_52w"]) / df["High_52w"] * 100))
     df.loc[:, "Pct_from_52wL"]  = _safe(((c - df["Low_52w"])  / df["Low_52w"]  * 100))
     df.loc[:, "Dist_EMA20_pct"] = _safe(((c - df["EMA20"])    / df["EMA20"]    * 100))
+
+    # ── DI Crossover ───────────────────────────────────────
+    _di_above = df["ADX_pos"] > df["ADX_neg"]
+    _di_cross_up   = _di_above & ~_di_above.shift(1, fill_value=False)
+    _di_cross_down = ~_di_above & _di_above.shift(1, fill_value=False)
+    di_cross = pd.Series(np.int8(0), index=df.index)
+    di_cross[_di_cross_up]   = np.int8(1)
+    di_cross[_di_cross_down] = np.int8(-1)
+    df.loc[:, "DI_Cross"] = di_cross
+
+    # ── Donchian Channel ───────────────────────────────────
+    df.loc[:, "Donchian_High"]  = h.rolling(DONCHIAN_PERIOD).max().astype("float32")
+    df.loc[:, "Donchian_Low"]   = l.rolling(DONCHIAN_PERIOD).min().astype("float32")
+    df.loc[:, "Donchian_Break"] = np.where(
+        c >= df["Donchian_High"], np.int8(1),
+        np.where(c <= df["Donchian_Low"], np.int8(-1), np.int8(0))
+    ).astype("int8")
+
+    # ── VWMA (daily VWAP proxy) ────────────────────────────
+    _cv   = (c * v).rolling(VWMA_PERIOD).sum()
+    _vsum = v.rolling(VWMA_PERIOD).sum().replace(0, np.nan)
+    df.loc[:, "VWMA20"]     = _safe(_cv / _vsum)
+    df.loc[:, "Above_VWMA"] = (c > df["VWMA20"]).astype("int8")
+
+    # ── Parabolic SAR ──────────────────────────────────────
+    try:
+        _psar = PSARIndicator(h, l, c, step=PSAR_STEP, max_step=PSAR_MAX_STEP)
+        _psar_up   = _psar.psar_up()
+        _psar_down = _psar.psar_down()
+        df.loc[:, "PSAR"] = _safe(_psar_up.fillna(_psar_down))
+        _psar_dir = np.where(_psar_up.notna(), np.int8(1), np.int8(-1))
+        df.loc[:, "PSAR_Dir"] = pd.Series(_psar_dir, index=df.index, dtype="int8")
+        _prev_dir = df["PSAR_Dir"].shift(1)
+        df.loc[:, "PSAR_Flip"] = np.where(
+            (df["PSAR_Dir"] == 1) & (_prev_dir == -1), np.int8(1),
+            np.where((df["PSAR_Dir"] == -1) & (_prev_dir == 1), np.int8(-1), np.int8(0))
+        ).astype("int8")
+    except Exception:
+        df.loc[:, "PSAR"]      = _safe(c * np.nan)
+        df.loc[:, "PSAR_Dir"]  = np.int8(0)
+        df.loc[:, "PSAR_Flip"] = np.int8(0)
 
     return df
 
