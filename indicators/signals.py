@@ -203,6 +203,13 @@ def compute_signals(df: pd.DataFrame) -> dict:
     # ── ATR% ─────────────────────────────────────────────────
     atr_pct     = float(last.get("ATR_pct", 1) or 1)
 
+    # ── New indicators ─────────────────────────────────────
+    di_cross_val    = int(last.get("DI_Cross", 0) or 0)
+    donchian_break  = int(last.get("Donchian_Break", 0) or 0)
+    above_vwma      = int(last.get("Above_VWMA", 0) or 0) == 1
+    psar_dir        = int(last.get("PSAR_Dir", 0) or 0)
+    psar_flip       = int(last.get("PSAR_Flip", 0) or 0)
+
     return {
         "Price"        : round(price, 2),
         "Chg%"         : round(pct_chg, 2),
@@ -232,6 +239,11 @@ def compute_signals(df: pd.DataFrame) -> dict:
         "SMI_Zone"     : smi_zone,
         "SMI_Cross"    : smi_cross,
         "Mkt_Struct"   : mkt_struct,
+        "DI_Cross"     : di_cross_val,
+        "Donchian_Break": donchian_break,
+        "Above_VWMA"   : above_vwma,
+        "PSAR_Dir"     : psar_dir,
+        "PSAR_Flip"    : psar_flip,
         "_trend"       : trend,
         "_regime"      : regime,
         "_vol"         : vol_status,
@@ -520,4 +532,14 @@ def format_row(ticker: str, signals: dict,
         "RS_Rank"     : 0,
         "SMI_Cross"   : t.get("SMI_Cross", 0),
         "VolSpurt"    : t.get("Vol", "—"),
+        "DI_Cross"    : t.get("DI_Cross", 0),
+        "Donchian_Break": t.get("Donchian_Break", 0),
+        "Above_VWMA"  : "✅" if t.get("Above_VWMA", False) else "❌",
+        "PSAR_Dir"    : t.get("PSAR_Dir", 0),
+        "PSAR_Flip"   : t.get("PSAR_Flip", 0),
+        "_di_cross"   : t.get("DI_Cross", 0),
+        "_donchian_break": t.get("Donchian_Break", 0),
+        "_above_vwma" : t.get("Above_VWMA", False),
+        "_psar_dir"   : t.get("PSAR_Dir", 0),
+        "_psar_flip"  : t.get("PSAR_Flip", 0),
     }

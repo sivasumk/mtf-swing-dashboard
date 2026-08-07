@@ -270,10 +270,52 @@ def apply_filters(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
     if filters.get("smi_cross") and "SMI_Cross" in f.columns:
         f = f[f["SMI_Cross"] == 1]
 
+    # ── New indicator filters ──────────────────────────────────
+    if filters.get("di_cross_bull") and "DI_Cross" in f.columns:
+        f = f[f["DI_Cross"] == 1]
+    if filters.get("di_cross_bear") and "DI_Cross" in f.columns:
+        f = f[f["DI_Cross"] == -1]
+    if filters.get("donchian_bull") and "Donchian_Break" in f.columns:
+        f = f[f["Donchian_Break"] == 1]
+    if filters.get("donchian_bear") and "Donchian_Break" in f.columns:
+        f = f[f["Donchian_Break"] == -1]
+    if filters.get("above_vwma") and "_above_vwma" in f.columns:
+        f = f[f["_above_vwma"] == True]
+    if filters.get("psar_bull") and "PSAR_Dir" in f.columns:
+        f = f[f["PSAR_Dir"] == 1]
+    if filters.get("psar_flip_bull") and "_psar_flip" in f.columns:
+        f = f[f["_psar_flip"] == 1]
+    if filters.get("psar_flip_bear") and "_psar_flip" in f.columns:
+        f = f[f["_psar_flip"] == -1]
+
     # RSI range slider
     rmin = filters.get("rsi_min", 0)
     rmax = filters.get("rsi_max", 100)
     f = f[(f["RSI"] >= rmin) & (f["RSI"] <= rmax)]
+
+    # ── Screener numeric range filters ─────────────────────
+    mom_min = filters.get("mom_min", 0)
+    mom_max = filters.get("mom_max", 100)
+    if (mom_min > 0 or mom_max < 100) and "MomScore" in f.columns:
+        f = f[(f["MomScore"] >= mom_min) & (f["MomScore"] <= mom_max)]
+
+    rs_min = filters.get("rs_min", 0)
+    rs_max = filters.get("rs_max", 100)
+    if (rs_min > 0 or rs_max < 100) and "RS_Score" in f.columns:
+        f = f[(f["RS_Score"] >= rs_min) & (f["RS_Score"] <= rs_max)]
+
+    rs_rank_max = filters.get("rs_rank_max", 0)
+    if rs_rank_max > 0 and "RS_Rank" in f.columns:
+        f = f[f["RS_Rank"] <= rs_rank_max]
+
+    chg_min = filters.get("chg_min", -20.0)
+    chg_max = filters.get("chg_max", 20.0)
+    if (chg_min > -20.0 or chg_max < 20.0) and "Chg%" in f.columns:
+        f = f[(f["Chg%"] >= chg_min) & (f["Chg%"] <= chg_max)]
+
+    pct_52wh_max = filters.get("pct_52wh_max", -100)
+    if pct_52wh_max > -100 and "52wH%" in f.columns:
+        f = f[f["52wH%"] >= pct_52wh_max]
 
     return f
 
