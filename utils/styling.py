@@ -136,6 +136,17 @@ def color_volspurt(val) -> str:
     return "color:#555"
 
 
+def color_cross(val) -> str:
+    """Color for crossover/breakout signals: +1 green, -1 red, 0 grey."""
+    try:
+        v = int(val)
+        if v == 1:  return "color:#26a69a;font-weight:700"
+        if v == -1: return "color:#ef5350;font-weight:700"
+        return "color:#555"
+    except Exception:
+        return ""
+
+
 def color_ml_signal(val) -> str:
     """ML signal styling with background."""
     s = str(val)
@@ -223,6 +234,11 @@ def apply_table_style(styler, run_ml: bool, cols: list):
     # New column stylers
     if "VolSpurt"   in cols: styler = styler.map(_sc(color_volspurt),  subset=["VolSpurt"])
     if "ML_Signal"  in cols: styler = styler.map(_sc(color_ml_signal), subset=["ML_Signal"])
+
+    # Crossover/breakout signal columns
+    for cross_col in ["DI_Cross", "PSAR_Dir", "PSAR_Flip", "Donchian_Break"]:
+        if cross_col in cols:
+            styler = styler.map(_sc(color_cross), subset=[cross_col])
 
     # W_/M_ MomScore gradients
     for pfx in ("W_", "M_"):

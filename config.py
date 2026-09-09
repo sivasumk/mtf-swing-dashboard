@@ -82,6 +82,16 @@ MACD_FAST       = 12
 MACD_SLOW       = 26
 MACD_SIGNAL     = 9
 
+# Donchian Channel
+DONCHIAN_PERIOD = 20
+
+# Parabolic SAR
+PSAR_STEP       = 0.02
+PSAR_MAX_STEP   = 0.2
+
+# VWMA (daily VWAP proxy)
+VWMA_PERIOD     = 20
+
 # ══════════════════════════════════════════════════════════════
 #  SIGNAL LOGIC
 # ══════════════════════════════════════════════════════════════
